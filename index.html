@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🧩 Universal Puzzle Solver</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f6f6f4;color:#111;padding:2rem;max-width:680px;margin:0 auto;line-height:1.5}
+h1{font-size:22px;font-weight:700;margin-bottom:.3rem}
+.sub{font-size:13px;color:#888;margin-bottom:1.5rem}
+.card{background:#fff;border:1px solid #e5e5e3;border-radius:14px;padding:1.25rem;margin-bottom:.9rem}
+.lbl{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#bbb;margin-bottom:.6rem}
+.drag{display:inline-block;background:#111;color:#fff;border-radius:9px;padding:10px 22px;font-size:14px;font-weight:700;text-decoration:none;cursor:grab;letter-spacing:-.01em;margin-bottom:8px}
+.drag:hover{background:#333}
+.code{background:#f4f4f2;border:1px solid #e0e0dc;border-radius:8px;padding:10px 14px;font-size:10px;font-family:monospace;word-break:break-all;line-height:1.7;cursor:pointer;user-select:all;color:#555;max-height:110px;overflow:auto}
+.cpbtn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;font-size:12px;border:1px solid #ddd;border-radius:8px;background:transparent;cursor:pointer;margin-top:10px;font-family:inherit;color:#333}
+.cpbtn:hover{background:#f5f5f3}
+#ck{font-size:12px;color:green;margin-left:8px;opacity:0;transition:opacity .15s}
+#ck.show{opacity:1}
+.grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin-top:.4rem}
+.gp{background:#f5f5f3;border-radius:9px;padding:9px 11px;font-size:12px;color:#555;line-height:1.4}
+.gp strong{display:block;font-size:12px;color:#111;margin-bottom:2px}
+ol{list-style:none;padding:0;counter-reset:s}
+ol li{counter-increment:s;display:flex;gap:10px;padding:5px 0;font-size:13px;color:#555;align-items:flex-start}
+ol li::before{content:counter(s);min-width:20px;height:20px;background:#f0f0ee;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#333;flex-shrink:0;margin-top:2px}
+.note{font-size:12px;color:#999;margin-top:8px;line-height:1.5}
+a{color:#0066cc}
+</style>
+</head>
+<body>
+<h1>🧩 Universal Puzzle Solver</h1>
+<p class="sub">Works on NYT games, Wordle clones, Quordle, Waffle — and uses AI for anything else.</p>
+
+<div class="card">
+  <div class="lbl">Drag to your bookmarks bar</div>
+  <a id="bm-link" class="drag" href="#">🧩 Solve It</a>
+  <div class="note">Drag the button above to your bookmarks bar. Works on any puzzle page — click it and it auto-detects the game.</div>
+</div>
+
+<div class="card">
+  <div class="lbl">What it recognises</div>
+  <div class="grid">
+    <div class="gp"><strong>🐝 Spelling Bee</strong>Full word list</div>
+    <div class="gp"><strong>🟩 Wordle</strong>Today's answer</div>
+    <div class="gp"><strong>🔗 Connections</strong>All 4 groups</div>
+    <div class="gp"><strong>🧵 Strands</strong>Theme + words</div>
+    <div class="gp"><strong>📦 Quordle</strong>All 4 answers</div>
+    <div class="gp"><strong>🧇 Waffle</strong>Solution grid</div>
+    <div class="gp"><strong>🌍 Worldle</strong>Country answer</div>
+    <div class="gp"><strong>🔢 Nerdle</strong>Equation answer</div>
+    <div class="gp"><strong>🤖 AI fallback</strong>Any other game</div>
+  </div>
+  <div class="note">For unrecognised games the AI reads the page, figures out the puzzle type, and suggests the best next move.</div>
+</div>
+
+<div class="card">
+  <div class="lbl">Or paste as bookmark URL</div>
+  <div class="code" id="bm-code">Loading…</div>
+  <button class="cpbtn" onclick="doCopy()">📋 Copy<span id="ck"> ✓ Copied!</span></button>
+</div>
+
+<div class="card">
+  <div class="lbl">How to use</div>
+  <ol>
+    <li>Open any puzzle page and let it fully load</li>
+    <li>Click the bookmarklet — a panel appears with the answer or best move</li>
+    <li>Click × or click again to close</li>
+  </ol>
+  <div class="note">The AI fallback reads the live DOM to understand the current game state, so it works even mid-game.</div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// THE BOOKMARKLET SOURCE (not minified for readability; we encode it below)
+// ─────────────────────────────────────────────────────────────────────────────
+const src = String.raw`(function(){
+var PID='__puzzle_solver_panel';
+if(document.getElementById(PID)){document.getElementById(PID).remove();return;}
+var url=location.href.toLowerCase();
+var host=location.hostname.toLowerCase();
+var d=new Date();
+var today=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+
+/* ── Panel builder ─────────────────────────────────────────────── */
+function mkPanel(title,accentColor,bodyHTML,wide){
+  var p=document.createElement('div');
+  p.id=PID;
+  Object.assign(p.style,{
+    position:'fixed',top:'14px',right:'14px',
+    width:wide?'340px':'294px',maxHeight:'90vh',
+    background:'#fff',border:'2px solid '+accentColor,
+    borderRadius:'16px',boxShadow:'0 10px 48px rgba(0,0,0,.22)',
+    zIndex:'2147483647',overflowY:'auto',
+    fontFamily:'-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+    fontSize:'13px',color:'#111'
+  });
+  var hdr=document.createElement('div');
+  Object.assign(hdr.style,{
+    padding:'10px 14px',background:accentColor,color:'#fff',
+    display:'flex',justifyContent:'space-between',alignItems:'center',
+    borderRadius:'13px 13px 0 0',position:'sticky',top:'0',zIndex:'2'
+  });
+  hdr.innerHTML='<span style="font-weight:700;font-size:14px">'+title+'</span>'
+    +'<span id="__puzzle_close" style="cursor:pointer;font-size:22px;line-height:1;opacity:.85">×</span>';
+  p.appendChild(hdr);
+  var body=document.createElement('div');
+  body.id='__puzzle_body';
+  body.style.padding='12px 14px';
+  body.innerHTML=bodyHTML||'<div id="__puzzle_loading" style="text-align:center;padding:20px;color:#aaa">Loading…</div>';
+  p.appendChild(body);
+  document.body.appendChild(p);
+  document.getElementById('__puzzle_close').onclick=function(){p.remove();};
+  return p;
+}
+function setBody(html){var b=document.getElementById('__puzzle_body');if(b)b.innerHTML=html;}
+function chip(text,bg,fg,bold,label){
+  return '<span title="'+(label||'')+'" style="display:inline-block;padding:3px 9px;border-radius:20px;font-size:12px;margin:2px 2px;background:'+bg+';color:'+fg+';font-weight:'+(bold?'700':'400')+'">'+text+'</span>';
+}
+
+/* ── Wordle big-tile row ───────────────────────────────────────── */
+function wordTiles(word,color){
+  return '<div style="display:flex;justify-content:center;gap:4px;padding:14px 0 6px">'
+    +word.toUpperCase().split('').map(function(l){
+      return '<span style="width:46px;height:46px;background:'+color+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;border-radius:6px">'+l+'</span>';
+    }).join('')+'</div>';
+}
+
+/* ── NYT API helper ────────────────────────────────────────────── */
+function nytFetch(endpoint,ok,fail){
+  fetch(endpoint).then(function(r){return r.ok?r.json():Promise.reject(r.status);}).then(ok).catch(fail||function(){setBody('<p style="color:#999;padding:8px">Could not load data.</p>');});
+}
+
+/* ════════════════════════════════════════════════════════════════
+   GAME DETECTION
+   ════════════════════════════════════════════════════════════════ */
+
+/* ── NYT Spelling Bee ─────────────────────────────────────────── */
+if(/spelling.bee/.test(url)&&/nytimes/.test(host)){
+  mkPanel('🐝 Spelling Bee','#f0b429');
+  function runBee(gd){
+    if(!gd||!gd.answers){setBody('<p style="color:#999">Spelling Bee data not found — make sure the game has loaded.</p>');return;}
+    var ans=gd.answers.slice().sort(function(a,b){return b.length-a.length||a.localeCompare(b);});
+    var ctr=(gd.centerLetter||'').toUpperCase();
+    var out=(gd.outerLetters||[]).map(function(l){return l.toUpperCase();});
+    var n=[ctr].concat(out).length;
+    var pans=new Set(ans.filter(function(w){return new Set(w.split('')).size>=n;}));
+    var byL={};ans.forEach(function(w){var l=w.length;if(!byL[l])byL[l]=[];byL[l].push(w);});
+    var h='<div style="font-size:11px;color:#aaa;margin-bottom:10px"><span style="color:#c8a000;font-weight:800">'+ctr+'</span> '+out.join(' ')+'  ·  '+ans.length+' words · '+pans.size+' pangram'+(pans.size!==1?'s':'')+'</div>';
+    Object.keys(byL).sort(function(a,b){return b-a;}).forEach(function(len){
+      h+='<div style="margin-bottom:8px"><div style="font-size:10px;font-weight:700;color:#bbb;letter-spacing:.08em;text-transform:uppercase;margin-bottom:3px">'+len+' letters ('+byL[len].length+')</div><div>';
+      byL[len].forEach(function(w){var pan=pans.has(w);h+=chip(pan?'⭐ '+w:w,pan?'#fff4cc':'#f2f2f2',pan?'#9a7000':'#222',pan,pan?'Pangram':'');});
+      h+='</div></div>';
+    });
+    setBody(h);
+    setTimeout(function(){
+      document.querySelectorAll('#'+PID+' span[title]').forEach(function(c){
+        c.style.cursor='pointer';
+        c.addEventListener('click',function(){
+          var w=c.textContent.replace('⭐ ','');
+          var inp=document.querySelector('input.sb-ts-input')||document.querySelector('input[inputmode="text"]')||document.querySelector('input[type="text"]');
+          if(inp){try{var s=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;s.call(inp,w);inp.dispatchEvent(new Event('input',{bubbles:true}));inp.focus();}catch(e){inp.value=w;inp.dispatchEvent(new Event('input',{bubbles:true}));}}
+          setTimeout(function(){var btn=document.querySelector('button.sb-ts-submit')||document.querySelector('[data-testid="spelling-bee-submit"]');if(btn)btn.click();else document.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));},80);
+        });
+      });
+    },200);
+  }
+  try{
+    if(window.gameData&&window.gameData.today){runBee(window.gameData.today);return;}
+    var sc=document.createElement('script');
+    sc.textContent='(function(){var e=document.getElementById("__sbraw")||document.createElement("div");e.id="__sbraw";try{e.setAttribute("v",JSON.stringify(window.gameData&&window.gameData.today||null));}catch(x){e.setAttribute("v","null");}document.body.appendChild(e);})()';
+    document.body.appendChild(sc);sc.remove();
+    var el=document.getElementById('__sbraw');
+    if(el){var dd=JSON.parse(el.getAttribute('v'));el.remove();runBee(dd);return;}
+  }catch(e){}
+  runBee(null);
+  return;
+}
+
+/* ── NYT Wordle ───────────────────────────────────────────────── */
+if((/wordle/.test(url)&&/nytimes/.test(host))||url.includes('nytimes.com/games/wordle')){
+  mkPanel('🟩 Wordle','#538d4e');
+  nytFetch('https://www.nytimes.com/svc/wordle/v2/'+today+'.json',function(data){
+    var w=(data.solution||'?????').toUpperCase();
+    setBody(wordTiles(w,'#538d4e')+'<div style="text-align:center;font-size:12px;color:#aaa;margin-top:4px">Puzzle #'+(data.days_since_launch||'?')+'</div>');
+  });
+  return;
+}
+
+/* ── NYT Connections ──────────────────────────────────────────── */
+if(/connections/.test(url)&&/nytimes/.test(host)){
+  mkPanel('🔗 Connections','#ba81c5',null,true);
+  nytFetch('https://www.nytimes.com/svc/connections/v2/'+today+'.json',function(data){
+    var cats=data.categories||[];
+    var bg=['#f9df6d','#a0c35a','#b0c4ef','#ba81c5'];
+    var labels=['🟨 Easiest','🟩','🟦','🟪 Hardest'];
+    var h='';
+    cats.forEach(function(cat,i){
+      h+='<div style="background:'+bg[i]+';border-radius:10px;padding:10px 12px;margin-bottom:8px">';
+      h+='<div style="font-size:10px;font-weight:700;opacity:.6;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">'+labels[i]+'</div>';
+      h+='<div style="font-weight:700;margin-bottom:5px">'+cat.title+'</div>';
+      h+='<div style="font-size:12px">'+(cat.cards||[]).map(function(c){return c.content;}).join(', ')+'</div></div>';
+    });
+    setBody(h);
+  });
+  return;
+}
+
+/* ── NYT Strands ──────────────────────────────────────────────── */
+if(/strands/.test(url)&&/nytimes/.test(host)){
+  mkPanel('🧵 Strands','#9b59b6');
+  function tryStrands(urls,idx){
+    if(idx>=urls.length){setBody('<p style="color:#999">Could not load Strands data.</p>');return;}
+    fetch(urls[idx]).then(function(r){return r.ok?r.json():Promise.reject();}).then(function(data){
+      var theme=data.theme||data.title||'';
+      var spangram=data.spangram||'';
+      var answers=data.answers||data.words||[];
+      var h='';
+      if(theme)h+='<div style="font-weight:700;font-size:15px;margin-bottom:10px;color:#5a1a8a">Theme: '+theme+'</div>';
+      if(spangram)h+='<div style="margin-bottom:8px">'+chip('⭐ '+spangram,'#ede0f4','#5a1a8a',true,'Spangram')+'</div>';
+      h+='<div>';
+      answers.forEach(function(w){if(w!==spangram)h+=chip(w,'#f2ecf8','#333',false,'');});
+      h+='</div>';
+      setBody(h);
+    }).catch(function(){tryStrands(urls,idx+1);});
+  }
+  tryStrands([
+    'https://www.nytimes.com/games/strands/data/strands-'+today+'.json',
+    'https://www.nytimes.com/svc/strands/v1/'+today+'.json',
+    'https://www.nytimes.com/games-assets/strands/data/'+today+'.json'
+  ],0);
+  return;
+}
+
+/* ── Quordle (quordle.com / merriam-webster quordle) ──────────── */
+if(/quordle/.test(host)||/quordle/.test(url)){
+  mkPanel('📦 Quordle','#e07b39');
+  var qdata=null;
+  try{
+    // Quordle stores answers in window or React fiber state
+    var sc2=document.createElement('script');
+    sc2.textContent='(function(){var e=document.getElementById("__qraw")||document.createElement("div");e.id="__qraw";var found=null;try{if(window.__quordle_answers)found=window.__quordle_answers;}catch(x){}if(!found){var keys=Object.keys(window);for(var i=0;i<keys.length;i++){var v=window[keys[i]];if(v&&Array.isArray(v)&&v.length===4&&v.every(function(w){return typeof w==="string"&&w.length===5})){found=v;break;}}}if(!found){var nd=document.getElementById("__NEXT_DATA__");if(nd){try{var p=JSON.parse(nd.textContent);var props=p.props&&p.props.pageProps;if(props){var cands=JSON.stringify(props).match(/"[a-z]{5}"/g)||[];var uniq=[...new Set(cands.map(function(s){return s.replace(/"/g,"");}))];if(uniq.length>=4)found=uniq.slice(0,4);}}catch(x){}}}e.setAttribute("v",found?JSON.stringify(found):"null");document.body.appendChild(e);})()';
+    document.body.appendChild(sc2);sc2.remove();
+    var qel=document.getElementById('__qraw');
+    if(qel){qdata=JSON.parse(qel.getAttribute('v'));qel.remove();}
+  }catch(e){}
+  if(qdata&&Array.isArray(qdata)&&qdata.length){
+    var h2='<div style="font-size:12px;color:#888;margin-bottom:10px">Today\'s 4 words:</div>';
+    qdata.forEach(function(w,i){h2+=wordTiles(w,'#e07b39');h2+='<div style="text-align:center;font-size:11px;color:#aaa;margin-bottom:8px">Word '+(i+1)+'</div>';});
+    setBody(h2);
+  } else {
+    // fallback: AI assist
+    aiAssist();
+  }
+  return;
+}
+
+/* ── Waffle (wafflegame.net) ──────────────────────────────────── */
+if(/wafflegame/.test(host)){
+  mkPanel('🧇 Waffle','#f5a623');
+  var wdata=null;
+  try{
+    var sc3=document.createElement('script');
+    sc3.textContent='(function(){var e=document.getElementById("__wraw")||document.createElement("div");e.id="__wraw";var found=null;try{var keys=Object.keys(window);for(var i=0;i<keys.length;i++){var v=window[keys[i]];if(v&&v.solution&&typeof v.solution==="string")found=v;}}catch(x){}e.setAttribute("v",found?JSON.stringify(found):"null");document.body.appendChild(e);})()';
+    document.body.appendChild(sc3);sc3.remove();
+    var wel=document.getElementById('__wraw');
+    if(wel){wdata=JSON.parse(wel.getAttribute('v'));wel.remove();}
+  }catch(e){}
+  if(wdata&&wdata.solution){
+    var words=wdata.solution.match(/[A-Z]{5}/g)||[];
+    var h3='<div style="font-size:12px;color:#888;margin-bottom:10px">Solution words:</div>';
+    words.forEach(function(w){h3+=wordTiles(w,'#f5a623');});
+    if(!words.length)h3='<p style="color:#999">'+wdata.solution+'</p>';
+    setBody(h3);
+  } else {
+    aiAssist();
+  }
+  return;
+}
+
+/* ── Worldle (worldle.teuteuf.fr) ────────────────────────────── */
+if(/worldle/.test(host)){
+  mkPanel('🌍 Worldle','#27ae60');
+  try{
+    var sc4=document.createElement('script');
+    sc4.textContent='(function(){var e=document.getElementById("__wdraw")||document.createElement("div");e.id="__wdraw";var found=null;try{var keys=Object.keys(window);for(var i=0;i<keys.length;i++){var v=window[keys[i]];if(v&&v.name&&v.code&&typeof v.name==="string")found=v;}}catch(x){}if(!found){var nd=document.getElementById("__NEXT_DATA__");if(nd){try{var p=JSON.parse(nd.textContent);var str=JSON.stringify(p);var m=str.match(/"name":"([^"]+)","code":"([A-Z]{2,3})"/);if(m)found={name:m[1],code:m[2]};}catch(x){}}}e.setAttribute("v",found?JSON.stringify(found):"null");document.body.appendChild(e);})()';
+    document.body.appendChild(sc4);sc4.remove();
+    var wdel=document.getElementById('__wdraw');
+    var wdd=wdel?JSON.parse(wdel.getAttribute('v')):null;
+    if(wdel)wdel.remove();
+    if(wdd&&wdd.name){
+      setBody('<div style="text-align:center;padding:16px 0 8px"><span style="font-size:40px">🌍</span></div><div style="text-align:center;font-size:20px;font-weight:700;margin-bottom:4px">'+wdd.name+'</div>'+(wdd.code?'<div style="text-align:center;font-size:12px;color:#aaa">'+wdd.code+'</div>':''));
+    } else {aiAssist();}
+  }catch(e){aiAssist();}
+  return;
+}
+
+/* ── Nerdle (nerdlegame.com) ──────────────────────────────────── */
+if(/nerdle/.test(host)){
+  mkPanel('🔢 Nerdle','#6c3483');
+  try{
+    var sc5=document.createElement('script');
+    sc5.textContent='(function(){var e=document.getElementById("__nerraw")||document.createElement("div");e.id="__nerraw";var found=null;try{var keys=Object.keys(window);for(var i=0;i<keys.length;i++){var v=window[keys[i]];if(typeof v==="string"&&/^[\d+\-*\/=]+$/.test(v)&&v.length>=6)found=v;}}catch(x){}if(!found){var nd=document.getElementById("__NEXT_DATA__");if(nd){try{var p=JSON.parse(nd.textContent);var m=JSON.stringify(p).match(/"([0-9+\-*\/=]{6,10})"/g);if(m){for(var i=0;i<m.length;i++){var s=m[i].replace(/"/g,"");if(/=/.test(s)&&/^\d/.test(s)){found=s;break;}}}}catch(x){}}}e.setAttribute("v",found||"null");document.body.appendChild(e);})()';
+    document.body.appendChild(sc5);sc5.remove();
+    var nel=document.getElementById('__nerraw');
+    var ndd=nel?nel.getAttribute('v'):null;
+    if(nel)nel.remove();
+    if(ndd&&ndd!=='null'){
+      setBody('<div style="text-align:center;padding:16px 0 8px"><span style="font-size:13px;font-weight:700;color:#888;letter-spacing:.06em">TODAY\'S EQUATION</span></div>'
+        +'<div style="text-align:center;font-size:24px;font-weight:700;letter-spacing:.1em;padding:12px;background:#f4ecf7;border-radius:10px;color:#6c3483">'+ndd+'</div>');
+    } else {aiAssist();}
+  }catch(e){aiAssist();}
+  return;
+}
+
+/* ── Generic Wordle-clone detector ───────────────────────────── */
+/* Try to find the answer in window variables, __NEXT_DATA__, or localStorage */
+function genericWordleDetect(cb){
+  var found=null;
+  // 1) inject script to scrape window scope
+  var sc6=document.createElement('script');
+  sc6.textContent='(function(){'+
+    'var e=document.getElementById("__genraw")||document.createElement("div");e.id="__genraw";'+
+    'var found=null;'+
+    // Look for 5-letter string vars on window
+    'try{var keys=Object.keys(window);for(var i=0;i<keys.length&&!found;i++){var v=window[keys[i]];if(typeof v==="string"&&/^[a-z]{4,8}$/i.test(v)&&keys[i].match(/answer|solution|word|target|secret/i))found={word:v,src:keys[i]};}}catch(x){}'+
+    // __NEXT_DATA__
+    'if(!found){var nd=document.getElementById("__NEXT_DATA__");if(nd){try{var p=JSON.parse(nd.textContent);var s=JSON.stringify(p);var m=s.match(/"(?:solution|answer|word|target)":"([a-zA-Z]{4,8})"/i);if(m)found={word:m[1],src:"__NEXT_DATA__"};}catch(x){}}}'+
+    // localStorage
+    'if(!found){try{var lkeys=Object.keys(localStorage);for(var i=0;i<lkeys.length&&!found;i++){if(lkeys[i].match(/word|answer|solution|target|secret/i)){try{var v=JSON.parse(localStorage.getItem(lkeys[i]));if(typeof v==="string"&&/^[a-z]{4,8}$/i.test(v))found={word:v,src:"localStorage:"+lkeys[i]}; if(v&&v.word&&/^[a-z]{4,8}$/i.test(v.word))found={word:v.word,src:"localStorage:"+lkeys[i]};}catch(x){}}}}catch(x){}}'+
+    'e.setAttribute("v",found?JSON.stringify(found):"null");document.body.appendChild(e);'+
+    '})()';
+  document.body.appendChild(sc6);sc6.remove();
+  var gel=document.getElementById('__genraw');
+  if(gel){
+    try{found=JSON.parse(gel.getAttribute('v'));}catch(e){}
+    gel.remove();
+  }
+  cb(found);
+}
+
+/* ── AI fallback ──────────────────────────────────────────────── */
+function aiAssist(){
+  mkPanel('🤖 AI Solver','#2c3e50',null,true);
+  // Scrape the page state: tiles, keyboard, any visible text
+  var pageText='';
+  try{
+    // Get tile states — works for most Wordle clones using data-state attributes
+    var rows=document.querySelectorAll('[class*="row"],[class*="Row"],[data-testid*="row"]');
+    var tileInfo=[];
+    rows.forEach(function(row){
+      var tiles=row.querySelectorAll('[data-state],[class*="tile"],[class*="Tile"],[class*="letter"]');
+      if(tiles.length){
+        var rowData=[];
+        tiles.forEach(function(t){
+          rowData.push({letter:(t.textContent||'').trim(),state:t.getAttribute('data-state')||t.className});
+        });
+        if(rowData.some(function(t){return t.letter;}))tileInfo.push(rowData);
+      }
+    });
+    if(tileInfo.length)pageText+='GAME TILES:\n'+JSON.stringify(tileInfo)+'\n\n';
+    // Keyboard
+    var keys=document.querySelectorAll('[class*="keyboard"] [data-key],[class*="Keyboard"] [data-key]');
+    var keyStates=[];
+    keys.forEach(function(k){keyStates.push({key:k.getAttribute('data-key'),state:k.getAttribute('data-state')||k.className});});
+    if(keyStates.length)pageText+='KEYBOARD:\n'+JSON.stringify(keyStates)+'\n\n';
+    // Page title
+    pageText+='PAGE TITLE: '+document.title+'\n';
+    pageText+='URL: '+location.href+'\n';
+    // Visible headers/hints
+    var hints=[];
+    document.querySelectorAll('h1,h2,[class*="hint"],[class*="Hint"]').forEach(function(el){
+      var t=(el.textContent||'').trim().slice(0,100);
+      if(t)hints.push(t);
+    });
+    if(hints.length)pageText+='HINTS: '+hints.join(' | ')+'\n';
+  }catch(e){}
+
+  setBody('<div style="text-align:center;padding:12px 0;color:#aaa"><div style="font-size:22px;margin-bottom:6px">🤖</div><div style="font-size:12px">Analysing puzzle…</div></div>');
+
+  fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      model:'claude-sonnet-4-20250514',
+      max_tokens:600,
+      system:'You are a puzzle solver assistant embedded as a browser bookmarklet. The user is on a word puzzle page. Based on the page data provided, identify the puzzle type and give the BEST POSSIBLE NEXT GUESS or the ANSWER if you can determine it. Be concise and direct. If it\'s a Wordle-type game, recommend the single best word to guess given the current state. Format: start with one bold headline (e.g. "**Answer: FLAME**" or "**Best guess: CRANE**"), then 1-3 short lines of reasoning. Use plain text, no markdown lists.',
+      messages:[{role:'user',content:'PAGE DATA:\n'+pageText+'\n\nWhat puzzle is this and what should I do next?'}]
+    })
+  })
+  .then(function(r){return r.json();})
+  .then(function(data){
+    var text=(data.content&&data.content[0]&&data.content[0].text)||'Could not analyse the puzzle.';
+    // Render with basic bold support
+    var html=text.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\n/g,'<br>');
+    setBody('<div style="line-height:1.7;font-size:13px">'+html+'</div>');
+  })
+  .catch(function(){
+    setBody('<div style="color:#999;font-size:13px;line-height:1.7">Could not reach AI. Make sure you\'re on a supported puzzle page, or the AI service may be unavailable.<br><br><strong>Common sites:</strong><br>• nytimes.com/puzzles/spelling-bee<br>• nytimes.com/games/wordle<br>• nytimes.com/games/connections<br>• nytimes.com/games/strands<br>• quordle.com<br>• wafflegame.net</div>');
+  });
+}
+
+/* ── Route unrecognised pages ─────────────────────────────────── */
+/* Check for generic Wordle clone first, then fall back to AI */
+genericWordleDetect(function(found){
+  if(found&&found.word){
+    mkPanel('🔍 Puzzle Solver','#27ae60');
+    setBody(wordTiles(found.word,'#27ae60')
+      +'<div style="text-align:center;font-size:11px;color:#aaa;margin-top:4px">Found in: '+found.src+'</div>');
+  } else {
+    aiAssist();
+  }
+});
+
+})();`;
+
+const bm = 'javascript:' + encodeURIComponent(src);
+document.getElementById('bm-code').textContent = bm;
+document.getElementById('bm-link').href = bm;
+
+function doCopy(){
+  navigator.clipboard.writeText(bm).then(function(){
+    var t=document.getElementById('ck');
+    t.classList.add('show');
+    setTimeout(function(){t.classList.remove('show');},2000);
+  });
+}
+</script>
+</body>
+</html>
